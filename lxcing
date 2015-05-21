@@ -1,0 +1,90 @@
+#!/usr/bin/ruby
+require 'lxc'
+
+NEWDIRS = %w(
+proc
+sys/fs/cgroup
+etc
+run
+usr
+var/log
+home
+root)
+
+BINDDIRS = %w(
+etc/init.d
+etc/rc.d
+etc/sysconfig/network-scripts
+dev
+run
+bin
+sbin
+usr
+lib
+lib64)
+
+TEMPDIRS = %w(
+tmp
+run/lock
+var/tmp
+)
+
+COPYFILES = %w(
+etc/passwd
+etc/group)
+
+CONFIG = {
+  "lxc.pts" => "1024",
+  "lxc.cap.drop" => "sys_module mac_admin mac_override sys_time",
+  "lxc.mount.auto" => "cgroup:mixed proc:mixed sys:mixed"
+}
+
+# temporary
+name = SecureRandom.hex(4)
+
+lxcpath = LXC.global_config_item("lxc.lxcpath")
+ctpath = "#{lxcpath}/#{name}"
+rootfs = "#{ctpath}/rootfs"
+
+# create container directories
+Dir.mkdir(ctpath) unless Dir.exist?(ctpath)
+FileUtils.chmod(0770, ctpath)
+
+(NEWDIRS + BINDDIRS + TEMPDIRS).each do |d|
+  FileUtils.mkdir_p("#{rootfs}/#{d}") if Dir.exist?("/#{d}")
+end
+
+c = LXC::Container.new(name, lxcpath)
+if c.defined?
+  $stderr.puts("Container already exists.")
+  exit 1
+end
+
+# set configration and save
+CONFIG.each do |k,v|
+  c.set_config_item(k, v)
+end
+c.set_config_item("lxc.utsname", name)
+c.set_config_item("lxc.rootfs", "#{rootfs}")
+
+BINDDIRS.each do |d|
+  if Dir.exist?("/#{d}")
+    c.set_config_item("lxc.mount.entry", "/#{d} #{d} none ro,bind 0 0")
+  end
+end
+c.set_config_item("lxc.mount.entry", "#{ctpath}/init sbin/init none ro,bind 0 0")
+
+c.save_config
+
+# create init
+cmd = `LANG=C type #{ARGV[0]}`.split(/\s+/)
+io = File.open("#{ctpath}/init", "w")
+io.puts("exec /usr/sbin/init.lxc -- #{cmd[2]}")
+io.close
+FileUtils.chmod(0755, "#{ctpath}/init")
+
+c.start
+
+puts("Container #{c.name} is #{c.state}")
+
+exit 0
