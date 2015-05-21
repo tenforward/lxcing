@@ -2,8 +2,6 @@
 
 The lxcing is a tool for creating and starting lxc container.  The created container mounts most part of the host filesystem as own rootfs using bind mount.
 
-At this moment, it is for application container.
-
 ## Requirements
 
 * [LXC](https://linuxcontainers.org/lxc/)
